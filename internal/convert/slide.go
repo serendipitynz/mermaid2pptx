@@ -21,6 +21,13 @@ const (
 	textInsetsW = 18288  // ~2px horizontal text inset
 	textInsetsH = 9144
 	maxUpscale  = 1.25 // upper bound for enlarging small diagrams
+	// roundRect's presetTextRectangle is inset on each side by
+	// min(w,h) * adj * (1-cos45): the default adj is 16667, so ~4.9%.
+	roundRectInset = 0.048815
+	// Mermaid measures label widths with the browser's font stack, which is
+	// narrower than the output font (notably for Latin text). Widen the
+	// background box so it still covers what PowerPoint actually draws.
+	labelWidthSafety = 1.12
 )
 
 // Options controls slide generation.
@@ -82,11 +89,13 @@ func GenerateSlideXML(d *Diagram, opt Options) string {
 	scale, offX, offY := fitTransform(d, opt.MarginIn)
 	clFill, clStroke := d.clusterDefaults()
 	g := &slideGen{
-		scale:    scale,
-		offX:     offX,
-		offY:     offY,
-		font:     opt.Font,
-		sz:       maxInt(100, int(math.Round(basePt100*scale/50)*50)),
+		scale: scale,
+		offX:  offX,
+		offY:  offY,
+		font:  opt.Font,
+		// floor, not round: a font larger than the geometric scale would
+		// outgrow the boxes measured from the SVG.
+		sz:       maxInt(100, int(math.Floor(basePt100*scale/50))*50),
 		nextID:   2,
 		spIDs:    map[string]int{},
 		clFill:   clFill,
@@ -169,18 +178,32 @@ func (g *slideGen) writeFillLine(fill, stroke string, w int64, dashed bool) {
 	g.b.WriteString(`</a:ln>`)
 }
 
-// writeTxBody emits a text body; anchor is "ctr" or "t". noWrap disables
-// word wrapping (for exactly-sized free text boxes).
-func (g *slideGen) writeTxBody(paras []Para, color, anchor string, noWrap bool) {
+// txBody holds the text body settings that differ between shape kinds.
+type txBody struct {
+	anchor string // "ctr" or "t"
+	// noWrap disables word wrapping, for boxes whose text was laid out
+	// upstream (free text boxes, edge labels).
+	noWrap bool
+	// noInsets drops the default text insets, for boxes whose padding is
+	// already part of the shape geometry. The insets are a fixed EMU amount
+	// and so do not follow the diagram scale.
+	noInsets bool
+}
+
+func (g *slideGen) writeTxBody(paras []Para, color string, opt txBody) {
 	if len(paras) == 0 {
 		return
 	}
 	wrap := ""
-	if noWrap {
+	if opt.noWrap {
 		wrap = ` wrap="none"`
 	}
+	insW, insH := int64(textInsetsW), int64(textInsetsH)
+	if opt.noInsets {
+		insW, insH = 0, 0
+	}
 	fmt.Fprintf(&g.b, `<p:txBody><a:bodyPr rtlCol="0" anchor="%s"%s lIns="%d" tIns="%d" rIns="%d" bIns="%d"/><a:lstStyle/>`,
-		anchor, wrap, textInsetsW, textInsetsH, textInsetsW, textInsetsH)
+		opt.anchor, wrap, insW, insH, insW, insH)
 	for _, p := range paras {
 		algn := "ctr"
 		if p.Align != "" {
@@ -217,7 +240,7 @@ func (g *slideGen) writeCluster(c Cluster) {
 	fmt.Fprintf(&g.b, `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val %d"/></a:avLst></a:prstGeom>`, clusterAdj)
 	g.writeFillLine(orDefault(c.Fill, g.clFill), orDefault(c.Stroke, g.clStroke), lineWidth, false)
 	g.b.WriteString(`</p:spPr>`)
-	g.writeTxBody(c.Label, orDefault(c.TextColor, defTextColor), "t", false)
+	g.writeTxBody(c.Label, orDefault(c.TextColor, defTextColor), txBody{anchor: "t"})
 	g.b.WriteString(`</p:sp>`)
 }
 
@@ -259,7 +282,7 @@ func (g *slideGen) writeNode(n Node) {
 	}
 	g.writeFillLine(orDefault(n.Fill, defNodeFill), orDefault(n.Stroke, defNodeStroke), lineWidth, false)
 	g.b.WriteString(`</p:spPr>`)
-	g.writeTxBody(n.Label, orDefault(n.TextColor, defTextColor), "ctr", false)
+	g.writeTxBody(n.Label, orDefault(n.TextColor, defTextColor), txBody{anchor: "ctr"})
 	g.b.WriteString(`</p:sp>`)
 }
 
@@ -288,17 +311,29 @@ func (g *slideGen) writeEdgeLabel(l EdgeLabel) {
 		name = l.Label[0].Runs[0].Text
 	}
 	g.openSp(id, name)
-	r := Rect{
-		X: l.C.X - l.W/2 - labelPadPx, Y: l.C.Y - l.H/2 - labelPadPx/2,
-		W: l.W + 2*labelPadPx, H: l.H + labelPadPx,
-	}
+	w, h := labelBoxSize(l.W, l.H)
+	r := Rect{X: l.C.X - w/2, Y: l.C.Y - h/2, W: w, H: h}
 	g.writeXfrm(r)
 	g.b.WriteString(`<a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>`)
 	fmt.Fprintf(&g.b, `<a:solidFill><a:srgbClr val="%s"><a:alpha val="%d"/></a:srgbClr></a:solidFill><a:ln><a:noFill/></a:ln>`,
 		defLabelBg, labelAlpha)
 	g.b.WriteString(`</p:spPr>`)
-	g.writeTxBody(l.Label, orDefault(l.TextColor, defTextColor), "ctr", false)
+	// Mermaid's label div is white-space: nowrap, so every line break is
+	// already a separate paragraph; wrapping here could only be an artifact.
+	g.writeTxBody(l.Label, orDefault(l.TextColor, defTextColor), txBody{anchor: "ctr", noWrap: true, noInsets: true})
 	g.b.WriteString(`</p:sp>`)
+}
+
+// labelBoxSize returns the roundRect background size that keeps a label of the
+// given text size inside the shape's presetTextRectangle.
+func labelBoxSize(textW, textH float64) (w, h float64) {
+	h = textH + labelPadPx
+	inner := textW*labelWidthSafety + 2*labelPadPx
+	w = inner + 2*roundRectInset*h // the inset follows min(w,h)
+	if w < h {
+		w = inner / (1 - 2*roundRectInset)
+	}
+	return w, h
 }
 
 func (g *slideGen) writeEdge(e Edge, nodeRects map[string]Rect) {
@@ -410,7 +445,7 @@ func (g *slideGen) writeTextBox(t TextBox) {
 	g.openSp(id, name)
 	g.writeXfrm(t.R)
 	g.b.WriteString(`<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>`)
-	g.writeTxBody(t.Label, orDefault(t.Color, defTextColor), "ctr", true)
+	g.writeTxBody(t.Label, orDefault(t.Color, defTextColor), txBody{anchor: "ctr", noWrap: true})
 	g.b.WriteString(`</p:sp>`)
 }
 
