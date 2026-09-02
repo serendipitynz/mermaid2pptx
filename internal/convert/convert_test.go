@@ -574,3 +574,24 @@ func reconstructConnector(xfrm *xnode) (sx, sy, ex, ey float64) {
 func max4(a, b, c, d float64) float64 {
 	return math.Max(math.Max(a, b), math.Max(c, d))
 }
+
+// The whole point of labelBoxSize is that the text still fits inside the
+// roundRect's presetTextRectangle, which no XML well-formedness check catches.
+func TestLabelBoxFitsPresetTextRectangle(t *testing.T) {
+	cases := []struct{ w, h float64 }{
+		{20, 24},   // "OK" - square-ish, the inset follows the width
+		{45.7, 24}, // "HTTPS"
+		{64, 24},   // "書き込み"
+		{200, 48},  // wide, two lines
+	}
+	for _, c := range cases {
+		w, h := labelBoxSize(c.w, c.h)
+		inset := 2 * roundRectInset * math.Min(w, h)
+		wantW := c.w*labelWidthSafety + 2*labelPadPx
+		wantH := c.h + labelPadPx
+		if w-inset < wantW-1e-9 || h-inset < wantH-1e-9 {
+			t.Errorf("labelBoxSize(%g, %g) = %g x %g: text area %g x %g, want at least %g x %g",
+				c.w, c.h, w, h, w-inset, h-inset, wantW, wantH)
+		}
+	}
+}
