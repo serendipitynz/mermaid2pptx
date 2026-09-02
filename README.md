@@ -39,7 +39,7 @@ Sample coverage:
 ## Install
 
 ```sh
-go install github.com/takkyun/mermaid2pptx/cmd/mermaid2pptx@latest
+go install github.com/serendipitynz/mermaid2pptx/cmd/mermaid2pptx@latest
 ```
 
 ## Build

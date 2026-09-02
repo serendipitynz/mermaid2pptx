@@ -9,7 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/takkyun/mermaid2pptx/internal/convert"
+	"github.com/serendipitynz/mermaid2pptx/internal/convert"
 )
 
 // version is injected at release build time via
