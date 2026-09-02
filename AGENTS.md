@@ -108,13 +108,15 @@ to `mmdc` to produce a temporary SVG first.
 - Edge endpoints are resolved first from the edge id (`L_from_to_n` /
   `id_from_to_n`), then by nearest-boundary geometry — node ids may contain
   underscores, so id splitting is validated against the known-id set.
-- **All text sizing comes from Mermaid's browser measurements**, taken with the
-  browser's own font stack — nothing in the pipeline measures the output font
-  (no font metrics: standard library only). `labelWidthSafety` in `slide.go`
-  compensates for the default font's extra width; a `-font` far wider than that
-  (a monospace face) will overflow its box, in node labels as much as in edge
-  labels. Widening the constant to cover any font would make the default output
-  permanently loose, so it is tuned for the default.
+- **Nothing in the pipeline measures the output font** (no font metrics:
+  standard library only). Widths come from Mermaid's browser measurements,
+  taken with the browser's own font stack, except in `sequence.go`, where
+  `estTextWidth` estimates them per character because the SVG has no measured
+  box to read. `labelWidthSafety` in `slide.go` compensates for the default
+  font's extra width; a `-font` far wider than that (a monospace face) will
+  overflow its box, in node labels as much as in edge labels. Widening the
+  constant to cover any font would make the default output permanently loose,
+  so it is tuned for the default.
 
 ## Adding a new diagram type
 

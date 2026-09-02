@@ -141,11 +141,12 @@ sequenceDiagram:
   moving the box leaves the text behind (grouping is a future task).
 - Sequence loop / alt frames go through the generic conversion (lines + text);
   there is no dedicated handling for them.
-- Text is laid out at the sizes Mermaid measured in the browser, with its own
-  font stack. Shapes and label backgrounds are sized from those measurements,
-  so a `-font` whose metrics are much wider than the browser's (a monospace
-  face, say) can push text past the box that holds it. The default font is
-  what the sizing is tuned for.
+- Shapes and label backgrounds are sized from the widths Mermaid measured in
+  the browser, with its own font stack — except sequence message labels, whose
+  widths come from a per-character estimate because the SVG carries no measured
+  box for them. Either way nothing measures the output font, so a `-font` whose
+  metrics are much wider (a monospace face, say) can push text past the box
+  that holds it. The default font is what the sizing is tuned for.
 
 ## Contributing
 
