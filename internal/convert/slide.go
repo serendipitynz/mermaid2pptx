@@ -325,15 +325,16 @@ func (g *slideGen) writeEdgeLabel(l EdgeLabel) {
 }
 
 // labelBoxSize returns the roundRect background size that keeps a label of the
-// given text size inside the shape's presetTextRectangle.
+// given text size inside the shape's presetTextRectangle, in both directions.
 func labelBoxSize(textW, textH float64) (w, h float64) {
-	h = textH + labelPadPx
-	inner := textW*labelWidthSafety + 2*labelPadPx
-	w = inner + 2*roundRectInset*h // the inset follows min(w,h)
-	if w < h {
-		w = inner / (1 - 2*roundRectInset)
-	}
-	return w, h
+	innerW := textW*labelWidthSafety + 2*labelPadPx
+	// Half the horizontal padding: mermaid's measured height already carries
+	// the 1.5 line-height leading, so the glyphs have room built in.
+	innerH := textH + labelPadPx
+	// The inset is the same on all four sides and follows min(w,h), so the
+	// shorter side determines it: min(w,h) = min(innerW,innerH) + 2*inset*min(w,h).
+	m := math.Min(innerW, innerH) / (1 - 2*roundRectInset)
+	return innerW + 2*roundRectInset*m, innerH + 2*roundRectInset*m
 }
 
 func (g *slideGen) writeEdge(e Edge, nodeRects map[string]Rect) {

@@ -586,13 +586,12 @@ func TestLabelBoxFitsPresetTextRectangle(t *testing.T) {
 	}
 	for _, c := range cases {
 		w, h := labelBoxSize(c.w, c.h)
-		inner := w - 2*roundRectInset*math.Min(w, h)
-		want := c.w*labelWidthSafety + 2*labelPadPx
-		if inner < want-1e-9 {
-			t.Errorf("labelBoxSize(%g, %g) = %g x %g: text area %g < %g", c.w, c.h, w, h, inner, want)
-		}
-		if h < c.h {
-			t.Errorf("labelBoxSize(%g, %g): height %g shrank below the text", c.w, c.h, h)
+		inset := 2 * roundRectInset * math.Min(w, h)
+		wantW := c.w*labelWidthSafety + 2*labelPadPx
+		wantH := c.h + labelPadPx
+		if w-inset < wantW-1e-9 || h-inset < wantH-1e-9 {
+			t.Errorf("labelBoxSize(%g, %g) = %g x %g: text area %g x %g, want at least %g x %g",
+				c.w, c.h, w, h, w-inset, h-inset, wantW, wantH)
 		}
 	}
 }
