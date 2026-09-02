@@ -1,3 +1,3 @@
-module github.com/takkyun/mermaid2pptx
+module github.com/serendipitynz/mermaid2pptx
 
 go 1.24

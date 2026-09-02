@@ -38,7 +38,7 @@ sample/           サンプル (.mmd / mermaid-cli で生成した .svg /
 ## インストール
 
 ```sh
-go install github.com/takkyun/mermaid2pptx/cmd/mermaid2pptx@latest
+go install github.com/serendipitynz/mermaid2pptx/cmd/mermaid2pptx@latest
 ```
 
 ## ビルド
