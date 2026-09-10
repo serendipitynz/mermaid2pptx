@@ -72,6 +72,12 @@ shift by exactly the offset given. Node shapes are named after the Mermaid node
 id and connectors `edge <from>-<to>`, so the names come straight from the
 `.mmd`.
 
+Read the closing `VERDICT:` line rather than the counts above it. A generator
+that stopped emitting `stCxn`/`endCxn` leaves nothing bound to the moved node,
+which as bare counts is `followed=0 stuck=0` — indistinguishable at a glance
+from a clean run — so the verdict calls that case out as a failure, along with
+how many edge endpoints carry no connection at all.
+
 They are tracked as `.applescript` rather than compiled `.scpt` so changes show
 up in a diff; `osascript` runs plain text directly, and `osacompile` can make a
 double-clickable droplet if one is ever wanted.

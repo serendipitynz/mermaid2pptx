@@ -157,6 +157,7 @@ on formatReport(deckPath, targetName, dx, dy, beforeRows, afterRows, movedPath, 
 	set stuck to 0
 	set strayed to 0
 	set held to 0
+	set unbound to 0
 	repeat with i from 1 to (count of beforeRows)
 		set b to item i of beforeRows
 		set a to item i of afterRows
@@ -164,8 +165,15 @@ on formatReport(deckPath, targetName, dx, dy, beforeRows, afterRows, movedPath, 
 		set report to report & "    begin " & my endpointLine(b, a, 4, 5)
 		set report to report & "    end   " & my endpointLine(b, a, 6, 7)
 		repeat with side in {{2, 4, 5}, {3, 6, 7}}
+			set sideName to item (item 1 of side) of b
+			-- Only edge connectors are supposed to carry stCxn/endCxn; the
+			-- "line" connectors (sequence lifelines, compartment dividers) are
+			-- free-standing by design, so an unbound end there is not a defect.
+			if (sideName is "-") and ((item 1 of b) starts with "edge ") then
+				set unbound to unbound + 1
+			end if
 			set didMove to my endpointMoved(b, a, item 2 of side, item 3 of side)
-			if (item (item 1 of side) of b) is targetName then
+			if sideName is targetName then
 				if didMove then
 					set followed to followed + 1
 				else
@@ -184,9 +192,30 @@ on formatReport(deckPath, targetName, dx, dy, beforeRows, afterRows, movedPath, 
 	-- connection site now faces it, so it rarely shifts by exactly (dx, dy);
 	-- "moved at all" is what separates a bound connector from a loose line.
 	set report to report & linefeed & "endpoints bound to " & targetName & ": followed=" & followed & " stuck=" & stuck & linefeed
-	set report to report & "other endpoints: unchanged=" & held & " moved=" & strayed
-	return report
+	set report to report & "other endpoints: unchanged=" & held & " moved=" & strayed & linefeed
+	set report to report & "unbound endpoints on edge connectors: " & unbound & linefeed & linefeed
+	return report & "VERDICT: " & my verdictFor(targetName, followed, stuck, unbound)
 end formatReport
+
+-- The regression this script exists to catch -- the generator dropping
+-- stCxn/endCxn -- leaves nothing bound to the moved node, which as bare counts
+-- reads `followed=0 stuck=0` and looks as harmless as a clean run. State the
+-- conclusion instead of leaving the reader to infer it from zeroes.
+on verdictFor(targetName, followed, stuck, unbound)
+	if (followed + stuck) is 0 then
+		if unbound > 0 then
+			return "FAIL - nothing is bound to " & targetName & ", and " & unbound & " edge endpoint(s) carry no connection at all. The generator is not emitting stCxn/endCxn; this run proves nothing about following."
+		end if
+		return "FAIL - no connector names " & targetName & " as an endpoint, so this run proves nothing. Check the shape name against the node ids in the .mmd."
+	end if
+	if stuck > 0 then
+		return "FAIL - " & stuck & " of " & (followed + stuck) & " endpoints bound to " & targetName & " stayed put; PowerPoint is not treating those as connected."
+	end if
+	if unbound > 0 then
+		return "OK for " & targetName & " (all " & followed & " bound endpoints followed it), but " & unbound & " edge endpoint(s) elsewhere carry no connection -- move a node at one of those to check them too."
+	end if
+	return "OK - all " & followed & " endpoints bound to " & targetName & " followed it, and every edge endpoint is connected."
+end verdictFor
 
 on endpointLine(b, a, xi, yi)
 	set x0 to item xi of b
