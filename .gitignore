@@ -10,3 +10,8 @@
 
 # OS / editor cruft
 .DS_Store
+
+# Output of the optional PowerPoint verification scripts (scripts/*.applescript)
+/sample/*.pdf
+/sample/*-moved.pptx
+~$*.pptx
