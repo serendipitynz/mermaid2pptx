@@ -1,10 +1,10 @@
 ---
 id: TASK-1
 title: Track PowerPoint render-export and connector-following AppleScript in the repo
-status: In Review
+status: Done
 assignee: []
 created_date: '2026-09-08 21:28'
-updated_date: '2026-09-10 06:33'
+updated_date: '2026-09-10 09:12'
 labels: []
 milestone: m-3
 dependencies: []
