@@ -44,6 +44,34 @@ XML から復元(flip/回転を戻す)し、SVG の `data-points` を同じ px�
 `fitTransform` が単一の情報源で、ジェネレータとテストで共有している。幾何を
 触ったらこのテストがガード。常にグリーンに保つこと。
 
+#### 任意: PowerPoint 自身でレンダリングする (macOS)
+
+`python-pptx` もテストも、こちらが書いた XML を読んでいるだけで、PowerPoint が
+レイアウト時に何をするかは見ていない。`scripts/` 配下のプレーンテキスト
+AppleScript 2 本がアプリケーション自身を検証に組み込む。これは**任意の手動
+手順**で、macOS と Microsoft PowerPoint を必要とする。`go test` からは到達
+しないので、テストは Go ツールチェインだけの任意のプラットフォームで通る。
+
+```sh
+osascript scripts/export-pdf.applescript sample
+osascript scripts/connector-following.applescript sample/graph1.pptx VALID 40 -30
+```
+
+`export-pdf.applescript` はフォルダ内の各 `.pptx` を隣に PDF として書き出す。
+PowerPoint のロックファイル (`~$` 前置き) と既に PDF がある deck はスキップし、
+converted/skipped/failed を集計する。ラベルの再折り返しや図形の潰れはこれで見る。
+
+`connector-following.applescript` は PDF では答えられない問いを扱う。指定ノードを
+指定オフセット (pt) だけ動かし、`<deck>-moved.pptx` とその PDF を元ファイルの隣に
+書き出し、全コネクタ端点の移動前後を報告する。動かしたノードに接続された端点は
+移動するはずだが、接続済み端点はその時点で正対する接続サイトへ再ルーティング
+されるため、与えたオフセットぴったりには動かない。ノード図形の名前は Mermaid の
+ノード id、コネクタは `edge <from>-<to>` なので、名前は `.mmd` からそのまま分かる。
+
+差分でレビューできるよう、コンパイル済み `.scpt` ではなく `.applescript` を
+管理している。`osascript` はプレーンテキストをそのまま実行でき、ダブルクリック
+可能な droplet が要るときは `osacompile` で作れる。
+
 ## アーキテクチャ
 
 パイプライン: **SVG をパース → `Diagram` モデル → `slide1.xml`(DrawingML)を

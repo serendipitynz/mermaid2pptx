@@ -45,6 +45,37 @@ through the same px->EMU fit, within ~1 EMU. `fitTransform` in `slide.go` is
 the single source of truth for that transform, shared by the generator and the
 test. If you touch geometry, this test is the guard — keep it green.
 
+#### Optional: rendering with PowerPoint itself (macOS)
+
+`python-pptx` and the tests both read the XML we wrote; neither sees what
+PowerPoint does at layout time. Two plain-text AppleScripts under `scripts/`
+put the application itself in the loop. They are a **manual step** — they need
+macOS with Microsoft PowerPoint, and nothing in `go test` reaches them, so the
+test suite still runs on any platform with only the Go toolchain.
+
+```sh
+osascript scripts/export-pdf.applescript sample
+osascript scripts/connector-following.applescript sample/graph1.pptx VALID 40 -30
+```
+
+`export-pdf.applescript` exports every `.pptx` in a folder to a PDF beside it,
+skipping PowerPoint's `~$` lock files and decks that already have one, and
+reports converted/skipped/failed counts. Use it to see re-wrapped labels and
+collapsed shapes.
+
+`connector-following.applescript` answers the one question a PDF cannot: it
+moves the named node by the given offset (in points), writes
+`<deck>-moved.pptx` and its PDF beside the source, and reports every connector
+endpoint before and after. Endpoints bound to the moved node must move; a bound
+endpoint is re-routed to whichever connection site now faces it, so it will not
+shift by exactly the offset given. Node shapes are named after the Mermaid node
+id and connectors `edge <from>-<to>`, so the names come straight from the
+`.mmd`.
+
+They are tracked as `.applescript` rather than compiled `.scpt` so changes show
+up in a diff; `osascript` runs plain text directly, and `osacompile` can make a
+double-clickable droplet if one is ever wanted.
+
 ## Architecture
 
 Pipeline: **parse SVG → `Diagram` model → emit `slide1.xml` (DrawingML) → zip
