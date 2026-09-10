@@ -75,8 +75,16 @@ id and connectors `edge <from>-<to>`, so the names come straight from the
 Read the closing `VERDICT:` line rather than the counts above it. A generator
 that stopped emitting `stCxn`/`endCxn` leaves nothing bound to the moved node,
 which as bare counts is `followed=0 stuck=0` — indistinguishable at a glance
-from a clean run — so the verdict calls that case out as a failure, along with
-how many edge endpoints carry no connection at all.
+from a clean run. **Any** unbound `edge ` endpoint fails the run, even when the
+moved node's own endpoints all followed: an unbound endpoint names no shape, so
+there is no telling whether the binding that went missing was the moved node's.
+Every `edge ` connector the generator emits is bound at both ends, so this
+rejects no legitimate deck.
+
+One blind spot to know about: a U-turn route falls back to a freeform polyline,
+emitted as a `<p:sp>` rather than a connector (`writeFreeformEdge`). PowerPoint
+does not report it as a connector, so this script never sees it — an `OK`
+verdict says nothing about those edges.
 
 They are tracked as `.applescript` rather than compiled `.scpt` so changes show
 up in a diff; `osascript` runs plain text directly, and `osacompile` can make a

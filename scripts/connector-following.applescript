@@ -37,16 +37,24 @@ on run argv
 		if my basename(full name of p) is not my basename(deckPath) then
 			error "PowerPoint opened " & (full name of p) & " instead of " & deckPath
 		end if
-		set s to slide 1 of p
+		-- Close the deck even when the work below fails (a missing shape name,
+		-- a refused save); otherwise PowerPoint is left holding it open with a
+		-- ~$ lock file beside the source.
+		try
+			set s to slide 1 of p
 
-		set beforeRows to my readConnectors(s)
-		set target to my findShape(s, targetName)
-		set left position of target to (left position of target) + dx
-		set top of target to (top of target) + dy
+			set beforeRows to my readConnectors(s)
+			set target to my findShape(s, targetName)
+			set left position of target to (left position of target) + dx
+			set top of target to (top of target) + dy
 
-		save p in POSIX file movedPath as save as Open XML presentation
-		save p in POSIX file pdfPath as save as PDF
-		set afterRows to my readConnectors(s)
+			save p in POSIX file movedPath as save as Open XML presentation
+			save p in POSIX file pdfPath as save as PDF
+			set afterRows to my readConnectors(s)
+		on error errText
+			close p saving no
+			error errText
+		end try
 		close p saving no
 	end tell
 
@@ -201,20 +209,29 @@ end formatReport
 -- stCxn/endCxn -- leaves nothing bound to the moved node, which as bare counts
 -- reads `followed=0 stuck=0` and looks as harmless as a clean run. State the
 -- conclusion instead of leaving the reader to infer it from zeroes.
+--
+-- Any unbound endpoint fails the run, even when the moved node's own endpoints
+-- all followed: an unbound endpoint reports its shape as "-", so there is no
+-- way to tell whether the binding that went missing was one of the target's.
+-- Every `edge ` connector the generator emits is bound at both ends, so there
+-- is no legitimate deck this rejects. (U-turn routes fall back to a freeform
+-- polyline, which is a <p:sp> rather than a connector -- PowerPoint does not
+-- report it as one, so it never reaches this count.)
 on verdictFor(targetName, followed, stuck, unbound)
-	if (followed + stuck) is 0 then
-		if unbound > 0 then
-			return "FAIL - nothing is bound to " & targetName & ", and " & unbound & " edge endpoint(s) carry no connection at all. The generator is not emitting stCxn/endCxn; this run proves nothing about following."
+	if unbound > 0 then
+		set detail to (unbound as text) & " edge endpoint(s) carry no connection at all; the generator is not emitting stCxn/endCxn for them."
+		if (followed + stuck) is 0 then
+			return "FAIL - nothing is bound to " & targetName & ", and " & detail & " This run proves nothing about following."
 		end if
+		return "FAIL - " & detail & " " & (followed as text) & " endpoint(s) bound to " & targetName & " did follow it, but an unbound endpoint names no shape, so one of the missing bindings may be " & targetName & "'s own."
+	end if
+	if (followed + stuck) is 0 then
 		return "FAIL - no connector names " & targetName & " as an endpoint, so this run proves nothing. Check the shape name against the node ids in the .mmd."
 	end if
 	if stuck > 0 then
-		return "FAIL - " & stuck & " of " & (followed + stuck) & " endpoints bound to " & targetName & " stayed put; PowerPoint is not treating those as connected."
+		return "FAIL - " & (stuck as text) & " of " & ((followed + stuck) as text) & " endpoints bound to " & targetName & " stayed put; PowerPoint is not treating those as connected."
 	end if
-	if unbound > 0 then
-		return "OK for " & targetName & " (all " & followed & " bound endpoints followed it), but " & unbound & " edge endpoint(s) elsewhere carry no connection -- move a node at one of those to check them too."
-	end if
-	return "OK - all " & followed & " endpoints bound to " & targetName & " followed it, and every edge endpoint is connected."
+	return "OK - all " & (followed as text) & " endpoints bound to " & targetName & " followed it, and every edge endpoint is connected."
 end verdictFor
 
 on endpointLine(b, a, xi, yi)

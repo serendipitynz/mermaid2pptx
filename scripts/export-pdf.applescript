@@ -70,9 +70,16 @@ on exportOne(deckPath, pdfPath)
 		if my basename(full name of p) is not my basename(deckPath) then
 			error "PowerPoint opened " & (full name of p) & " instead"
 		end if
-		-- The path must be a `POSIX file`, not a plain string: with a string
-		-- PowerPoint reports success and writes nothing.
-		save p in POSIX file pdfPath as save as PDF
+		-- Close the deck even when the save fails; otherwise a folder with one
+		-- bad deck leaves PowerPoint holding it open for the rest of the run.
+		try
+			-- The path must be a `POSIX file`, not a plain string: with a string
+			-- PowerPoint reports success and writes nothing.
+			save p in POSIX file pdfPath as save as PDF
+		on error errText
+			close p saving no
+			error errText
+		end try
 		close p saving no
 	end tell
 end exportOne
