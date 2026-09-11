@@ -811,3 +811,50 @@ func TestFitLineCountLatin(t *testing.T) {
 		}
 	}
 }
+
+// TestSequenceLabelsUnwrapped covers graph6, whose labels take the same node
+// writing path. Its line counts cannot be checked the way the other samples'
+// are: a sequence SVG carries no foreignObject, so mermaid records no line
+// count to compare against — what is checkable is that PowerPoint is not left
+// to re-break text the parser measured itself.
+func TestSequenceLabelsUnwrapped(t *testing.T) {
+	path := "../../sample/graph6.svg"
+	d := mustParseFile(t, path)
+	root, err := parseXMLTree(strings.NewReader(GenerateSlideXML(d, Options{Font: "X", MarginIn: 0.3})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	labeled := 0
+	root.walk(func(nd *xnode) {
+		if nd.tag != "sp" {
+			return
+		}
+		var name string
+		var bodyPr *xnode
+		text := false
+		nd.walk(func(k *xnode) {
+			switch k.tag {
+			case "cNvPr":
+				if name == "" {
+					name = k.get("name")
+				}
+			case "bodyPr":
+				if bodyPr == nil {
+					bodyPr = k
+				}
+			case "t":
+				text = true
+			}
+		})
+		if !text {
+			return
+		}
+		labeled++
+		if bodyPr == nil || bodyPr.get("wrap") != "none" {
+			t.Errorf("%s: %q emitted with wrapping on", path, name)
+		}
+	})
+	if labeled == 0 {
+		t.Errorf("%s: no labels to verify", path)
+	}
+}
