@@ -181,8 +181,8 @@ func (g *slideGen) writeFillLine(fill, stroke string, w int64, dashed bool) {
 // txBody holds the text body settings that differ between shape kinds.
 type txBody struct {
 	anchor string // "ctr" or "t"
-	// noWrap disables word wrapping, for boxes whose text was laid out
-	// upstream (free text boxes, edge labels).
+	// noWrap disables word wrapping. Every label the generator emits is laid
+	// out upstream: its paragraphs are the lines mermaid rendered.
 	noWrap bool
 	// noInsets drops the default text insets, for boxes whose padding is
 	// already part of the shape geometry. The insets are a fixed EMU amount
@@ -240,7 +240,7 @@ func (g *slideGen) writeCluster(c Cluster) {
 	fmt.Fprintf(&g.b, `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val %d"/></a:avLst></a:prstGeom>`, clusterAdj)
 	g.writeFillLine(orDefault(c.Fill, g.clFill), orDefault(c.Stroke, g.clStroke), lineWidth, false)
 	g.b.WriteString(`</p:spPr>`)
-	g.writeTxBody(c.Label, orDefault(c.TextColor, defTextColor), txBody{anchor: "t"})
+	g.writeTxBody(c.Label, orDefault(c.TextColor, defTextColor), txBody{anchor: "t", noWrap: true})
 	g.b.WriteString(`</p:sp>`)
 }
 
@@ -282,7 +282,7 @@ func (g *slideGen) writeNode(n Node) {
 	}
 	g.writeFillLine(orDefault(n.Fill, defNodeFill), orDefault(n.Stroke, defNodeStroke), lineWidth, false)
 	g.b.WriteString(`</p:spPr>`)
-	g.writeTxBody(n.Label, orDefault(n.TextColor, defTextColor), txBody{anchor: "ctr"})
+	g.writeTxBody(n.Label, orDefault(n.TextColor, defTextColor), txBody{anchor: "ctr", noWrap: true})
 	g.b.WriteString(`</p:sp>`)
 }
 
