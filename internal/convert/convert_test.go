@@ -815,23 +815,35 @@ func TestFitLineCountLatin(t *testing.T) {
 // TestSequenceLabelsUnwrapped covers graph6, whose labels take the same node
 // writing path. Its line counts cannot be checked the way the other samples'
 // are: a sequence SVG carries no foreignObject, so mermaid records no line
-// count to compare against — what is checkable is that PowerPoint is not left
-// to re-break text the parser measured itself.
+// count to compare against — what is checkable is that every label the parser
+// produced reaches the slide with its paragraphs intact and with PowerPoint
+// not left to re-break text the parser measured itself.
 func TestSequenceLabelsUnwrapped(t *testing.T) {
 	path := "../../sample/graph6.svg"
 	d := mustParseFile(t, path)
+	var want []int
+	for _, n := range d.Nodes {
+		if len(n.Label) > 0 {
+			want = append(want, len(n.Label))
+		}
+	}
+	for _, tb := range d.TextBoxes {
+		if len(tb.Label) > 0 {
+			want = append(want, len(tb.Label))
+		}
+	}
 	root, err := parseXMLTree(strings.NewReader(GenerateSlideXML(d, Options{Font: "X", MarginIn: 0.3})))
 	if err != nil {
 		t.Fatal(err)
 	}
-	labeled := 0
+	var have []int
 	root.walk(func(nd *xnode) {
 		if nd.tag != "sp" {
 			return
 		}
 		var name string
 		var bodyPr *xnode
-		text := false
+		paras := 0
 		nd.walk(func(k *xnode) {
 			switch k.tag {
 			case "cNvPr":
@@ -842,20 +854,27 @@ func TestSequenceLabelsUnwrapped(t *testing.T) {
 				if bodyPr == nil {
 					bodyPr = k
 				}
-			case "t":
-				text = true
+			case "p":
+				paras++
 			}
 		})
-		if !text {
+		if paras == 0 {
 			return
 		}
-		labeled++
+		have = append(have, paras)
 		if bodyPr == nil || bodyPr.get("wrap") != "none" {
 			t.Errorf("%s: %q emitted with wrapping on", path, name)
 		}
 	})
-	if labeled == 0 {
-		t.Errorf("%s: no labels to verify", path)
+	sort.Ints(want)
+	sort.Ints(have)
+	if len(want) == 0 {
+		t.Fatalf("%s: no labels to verify", path)
+	}
+	// counts as well as contents: a label dropped on the way to the slide
+	// leaves the shapes that remain looking correct
+	if !slices.Equal(want, have) {
+		t.Errorf("%s: emitted label paragraph counts %v, parser produced %v", path, have, want)
 	}
 }
 
