@@ -1,10 +1,10 @@
 ---
 id: TASK-2
 title: Stop PowerPoint from re-wrapping node labels Mermaid laid out on one line
-status: In Review
+status: Done
 assignee: []
 created_date: '2026-09-08 21:29'
-updated_date: '2026-09-11 04:05'
+updated_date: '2026-09-11 09:26'
 labels: []
 milestone: m-3
 dependencies: []
