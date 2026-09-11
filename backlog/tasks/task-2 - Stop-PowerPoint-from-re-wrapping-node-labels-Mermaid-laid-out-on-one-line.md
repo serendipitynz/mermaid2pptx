@@ -4,7 +4,7 @@ title: Stop PowerPoint from re-wrapping node labels Mermaid laid out on one line
 status: In Review
 assignee: []
 created_date: '2026-09-08 21:29'
-updated_date: '2026-09-11 03:33'
+updated_date: '2026-09-11 04:05'
 labels: []
 milestone: m-3
 dependencies: []
@@ -127,4 +127,34 @@ foreignObject の height (行数) と折り返し幅しか残っておらず、�
 - 自前折り返しの改行位置は文字幅推定に依存する。CJK は 16px で実測と一致するが ASCII は誤差があり、
   ラテン文字主体の長いラベルでは mermaid と改行位置がずれうる (行数が合うことは
   `TestNodeLabelLineCount` が検出する)。
+
+## 外部レビュー (PR #4, Codex CLI) で変わった点
+
+3 ラウンド回し、上の記述のうち幅推定に関する部分は置き換わった。
+
+- **ラテン文字の幅を実測値に置換 (R2 [P2])**: 「CJK 16px / ASCII 9px」の均一モデルは、改行位置だけでなく
+  **行数**まで誤らせることが指摘で判明した。250px 幅で 10 文字の `W` 4 語はブラウザが 4 行で描くのに
+  推定では 2 行になり、`wrap="none"` のため図形外へはみ出す。現在は mermaid のスタイルシートが指定する
+  フォントスタック先頭 `trebuchet ms` の実 advance を 16px で埋め込んでいる (`latinAdvance16`)。
+  検証可能な選択だった点が重要で、`nowrap` ラベルの foreignObject width はブラウザ自身の実測値なので、
+  サンプル内のラテン系ラベル 62 件に対し相対誤差の中央値 0.02% (最悪 4.7%、太字のクラス名) で一致する。
+  均一 9px は最大 50% ずれていた。これは**入力側**レイアウトの再現であり、出力フォント (`-font`) は
+  設計どおり不明のままなので、`labelWidthSafety` の既知の制約は残る (AC #4 の範囲外)。
+- **行数較正 `fitLineCount` (R1 [P2])**: SVG が記録している行数に折り返し幅を二分探索で合わせる。
+  advance テーブル導入後も残差 (スタック内の別フォント、テーブル外グリフ、擬似ボールド) の吸収役として残す。
+- **行高の 24px 固定を廃止 (R2 [P2])**: mermaid の fontSize は設定可能で、20px の 2 行ラベル (60px) が
+  3 行と解釈されていた。ルートの font-size (mermaid 自身のスタイルシート) と div の line-height から導出。
+- **ラベル単位のフォントサイズ (R3 [P2], 部分対応)**: classDef によるノード個別サイズのうち、
+  インラインスタイルで届くものは解決する。**スタイルシート規則として出力される場合は未対応**。
+  解決にはノードのクラスと規則の突き合わせが必要だが、この環境に mermaid-cli が無く、実フィクスチャで
+  DOM 形状を確認できない。AGENTS.md が「推測した DOM に対して直さない」と定めているため、
+  意図的に踏み込まなかった。**フィクスチャを用意して後続タスクとするかはオーナー判断**。
+- テスト追加: `TestFitLineCountLatin` / `TestFitLineCountMixedWidths` (幅の広い字・狭い字、改行位置と行幅)、
+  `TestLabelLineCountFontSize` / `TestLabelLineCountNodeFontSize` (20px の図、ノード個別サイズ)、
+  `TestSequenceLabelsUnwrapped` (graph6。パーサ側ラベルと出力側を段落数で突き合わせ、消失を検出)。
+  いずれも修正前に失敗することを確認済み。
+- 幅モデル変更に伴い graph4 (CJK に `API` が混ざるラベルで 1 文字分) と graph6 (同じモデルが
+  sequence のテキストボックス寸法に効く) を再生成し、PowerPoint 実描画で行数一致を再確認した。
+
+レビュー 3 ラウンドはループ上限。R3 の修正 (`d70a1fc`, `f3e545f`) は再レビュー未実施。
 <!-- SECTION:NOTES:END -->
