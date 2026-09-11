@@ -786,10 +786,10 @@ func checkCompartmentLines(t *testing.T, path string, d *Diagram) {
 	}
 }
 
-// TestFitLineCountLatin covers the widths the character model gets wrong: it
-// gives every latin glyph 9px, so wide glyphs estimate narrower than the
-// browser rendered them and thin ones wider. The label is emitted with
-// wrapping disabled, so a line count taken from the estimate alone would leave
+// TestFitLineCountLatin covers the residue the advance table cannot remove:
+// the widths are those of one font in mermaid's stack, so a label can still
+// wrap onto a different number of lines than the browser gave it. The label is
+// emitted with wrapping disabled, so a line count left uncorrected would leave
 // text hanging outside the shape (too few lines) or floating inside it (too
 // many).
 func TestFitLineCountLatin(t *testing.T) {

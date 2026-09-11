@@ -10,7 +10,7 @@ package convert
 // the stack mermaid's own stylesheet sets, taken from the font at 16px. Across
 // the 62 latin labels in sample/*.svg, whose foreignObject widths are the
 // browser's own measurements, this predicts the measured width with a median
-// error of 0.02%% (worst 4.7%%, on the bold class titles).
+// error of 0.02% (worst 4.7%, on the bold class titles).
 //
 // CJK falls back to a flat full-width 16px and anything else to a flat 9px,
 // near the mean latin advance. Neither is measured.
@@ -184,16 +184,15 @@ func tokenize(p Para) []token {
 }
 
 // fitLineCount re-breaks paras onto want lines, correcting the wrap width
-// until the line count matches. The width model gives every latin glyph the
-// same 9px, so a label of wide glyphs ("WWWW") estimates narrower than the
-// browser rendered it and a label of thin ones ("iiii") wider: wrapping at the
-// SVG's own width would then emit fewer or more lines than mermaid rendered,
-// and since the label is emitted with wrapping disabled, too few lines means
-// text hanging outside the shape.
+// until the line count matches. runeWidthPx follows the font mermaid laid the
+// label out with, so wrapping at the SVG's own width usually lands on the
+// browser's own line count — but the residue still matters: the label is
+// emitted with wrapping disabled, so one line too few is text hanging outside
+// the shape, with nothing left to re-break it.
 //
-// The line count is the one thing the SVG does record, so it is used to correct
-// the width the estimate could not get right. Break positions stay approximate;
-// the count no longer does.
+// The line count is the one thing the SVG does record, so it corrects what the
+// advances could not: a different font in the stack, a glyph outside the table,
+// synthetic bold. Break positions stay approximate; the count does not.
 func fitLineCount(paras []Para, width float64, want int) []Para {
 	got := wrapParas(paras, width)
 	if want <= 0 || len(got) == want {
