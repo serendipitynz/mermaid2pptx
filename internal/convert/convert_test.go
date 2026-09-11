@@ -785,3 +785,29 @@ func checkCompartmentLines(t *testing.T, path string, d *Diagram) {
 		t.Errorf("%s: label line counts %v, mermaid rendered %v", path, have, want)
 	}
 }
+
+// TestFitLineCountLatin covers the widths the character model gets wrong: it
+// gives every latin glyph 9px, so wide glyphs estimate narrower than the
+// browser rendered them and thin ones wider. The label is emitted with
+// wrapping disabled, so a line count taken from the estimate alone would leave
+// text hanging outside the shape (too few lines) or floating inside it (too
+// many).
+func TestFitLineCountLatin(t *testing.T) {
+	para := func(s string) []Para { return []Para{{Runs: []Run{{Text: s}}}} }
+	cases := []struct {
+		name  string
+		paras []Para
+		lay   labelLayout
+	}{
+		// "W" renders ~14.5px, so the browser fits one word per 250px line
+		{"wide glyphs", para("WWWWWWWWWW WWWWWWWWWW WWWWWWWWWW WWWWWWWWWW"), labelLayout{wrapW: 250, lines: 4}},
+		// "i" renders ~4.4px, so all four words fit on one line
+		{"thin glyphs", para("iiiiiiiiii iiiiiiiiii iiiiiiiiii iiiiiiiiii"), labelLayout{wrapW: 250, lines: 1}},
+	}
+	for _, c := range cases {
+		got := applyLabelWrap(c.paras, c.lay)
+		if len(got) != c.lay.lines {
+			t.Errorf("%s: %d paragraphs, mermaid rendered %d lines", c.name, len(got), c.lay.lines)
+		}
+	}
+}

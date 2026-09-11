@@ -231,10 +231,17 @@ func extractLabel(fo *xnode) ([]Para, string) {
 	return paras, color
 }
 
+// labelLayout is what mermaid's foreignObject records about how the label was
+// laid out: the width the browser wrapped it at (0 when mermaid laid it out
+// unwrapped) and the number of lines it ended up on.
+type labelLayout struct {
+	wrapW float64
+	lines int
+}
+
 // findLabel finds the label group / foreignObject under an element and
-// returns paragraphs, explicit text color, and the width the browser wrapped
-// the text at (0 when mermaid laid the label out unwrapped).
-func findLabel(el *xnode) ([]Para, string, float64) {
+// returns paragraphs, explicit text color, and that layout.
+func findLabel(el *xnode) ([]Para, string, labelLayout) {
 	var fo *xnode
 	el.walk(func(n *xnode) {
 		if fo == nil && n.tag == "foreignObject" {
@@ -242,7 +249,7 @@ func findLabel(el *xnode) ([]Para, string, float64) {
 		}
 	})
 	if fo == nil {
-		return nil, "", 0
+		return nil, "", labelLayout{}
 	}
 	paras, color := extractLabel(fo)
 	if color == "" {
@@ -253,7 +260,17 @@ func findLabel(el *xnode) ([]Para, string, float64) {
 			}
 		})
 	}
-	return paras, color, labelWrapWidth(fo)
+	return paras, color, labelLayout{wrapW: labelWrapWidth(fo), lines: labelLineCount(fo)}
+}
+
+// labelLineCount is how many lines mermaid rendered the label on: its
+// foreignObject is one 24px line high per line of text.
+func labelLineCount(fo *xnode) int {
+	h, _ := strconv.ParseFloat(fo.get("height"), 64)
+	if h <= 0 {
+		return 0
+	}
+	return int(math.Round(h / 24))
 }
 
 // labelWrapWidth reports the pixel width the browser wrapped a label at, or 0
@@ -279,18 +296,18 @@ func labelWrapWidth(fo *xnode) float64 {
 // applyLabelWrap carries mermaid's line breaking across, so that the emitted
 // paragraphs are the lines mermaid rendered. A label mermaid did not wrap
 // already has every break in the DOM as a <br>; one the browser wrapped keeps
-// only its width, so it is re-broken here at that same width.
+// only its width and line count, so it is re-broken here to that same count.
 //
 // The line breaks are then the generator's to own: every label is emitted with
 // PowerPoint's wrapping switched off. Leaving it on re-breaks these lines
 // against a text area much narrower than the node box, which is the whole
 // defect for a one-line label and re-breaks a wrapped one just as badly
 // (a 2-line diamond label came back out of PowerPoint as 4 lines).
-func applyLabelWrap(paras []Para, wrapW float64) []Para {
-	if wrapW <= 0 {
+func applyLabelWrap(paras []Para, lay labelLayout) []Para {
+	if lay.wrapW <= 0 {
 		return paras
 	}
-	return wrapParas(paras, wrapW)
+	return fitLineCount(paras, lay.wrapW, lay.lines)
 }
 
 // diagramType maps the SVG root's aria-roledescription to a Diagram.Type.
@@ -414,9 +431,9 @@ func parseCluster(g *xnode, dx, dy float64) (Cluster, bool) {
 	st := parseStyleDecls(rect.get("style"))
 	c.Fill = styleColor(st, "fill")
 	c.Stroke = styleColor(st, "stroke")
-	var wrapW float64
-	c.Label, c.TextColor, wrapW = findLabel(g)
-	c.Label = applyLabelWrap(c.Label, wrapW)
+	var lay labelLayout
+	c.Label, c.TextColor, lay = findLabel(g)
+	c.Label = applyLabelWrap(c.Label, lay)
 	return c, c.R.W > 0 && c.R.H > 0
 }
 
@@ -548,9 +565,9 @@ func parseNode(g *xnode, dtype string, dx, dy float64) (Node, bool) {
 	default:
 		return n, false
 	}
-	var wrapW float64
-	n.Label, n.TextColor, wrapW = findLabel(g)
-	n.Label = applyLabelWrap(n.Label, wrapW)
+	var lay labelLayout
+	n.Label, n.TextColor, lay = findLabel(g)
+	n.Label = applyLabelWrap(n.Label, lay)
 	if dtype == "state" {
 		applyStateNodeStyle(g, &n)
 	}
@@ -667,9 +684,9 @@ func parseEdgeLabel(g *xnode, dx, dy float64) (EdgeLabel, bool) {
 	}
 	l.W, _ = strconv.ParseFloat(fo.get("width"), 64)
 	l.H, _ = strconv.ParseFloat(fo.get("height"), 64)
-	var wrapW float64
-	l.Label, l.TextColor, wrapW = findLabel(g)
-	l.Label = applyLabelWrap(l.Label, wrapW)
+	var lay labelLayout
+	l.Label, l.TextColor, lay = findLabel(g)
+	l.Label = applyLabelWrap(l.Label, lay)
 	return l, l.W > 0 && l.H > 0 && len(l.Label) > 0
 }
 

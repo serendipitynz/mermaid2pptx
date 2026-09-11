@@ -23,8 +23,8 @@ func isCJK(r rune) bool {
 //
 // Callers use this only for labels mermaid let the browser wrap, where the SVG
 // keeps the resulting line count and the wrap width but not the positions of
-// the breaks — so these positions are estimated, and the caller leaves
-// PowerPoint's own wrapping on as a fallback.
+// the breaks. Those positions are estimated, so callers go through
+// fitLineCount rather than calling this directly with the SVG's width.
 func wrapParas(paras []Para, width float64) []Para {
 	if width <= 0 {
 		return paras
@@ -132,4 +132,52 @@ func tokenize(p Para) []token {
 	}
 	flush()
 	return toks
+}
+
+// fitLineCount re-breaks paras onto want lines, correcting the wrap width
+// until the line count matches. The width model gives every latin glyph the
+// same 9px, so a label of wide glyphs ("WWWW") estimates narrower than the
+// browser rendered it and a label of thin ones ("iiii") wider: wrapping at the
+// SVG's own width would then emit fewer or more lines than mermaid rendered,
+// and since the label is emitted with wrapping disabled, too few lines means
+// text hanging outside the shape.
+//
+// The line count is the one thing the SVG does record, so it is used to correct
+// the width the estimate could not get right. Break positions stay approximate;
+// the count no longer does.
+func fitLineCount(paras []Para, width float64, want int) []Para {
+	got := wrapParas(paras, width)
+	if want <= 0 || len(got) == want {
+		return got
+	}
+	// line count is non-increasing in width, so the widths yielding `want`
+	// lines form one interval: bracket it and bisect for its lower edge
+	lo, hi := 1.0, estTextWidth(paras)
+	for range 40 {
+		mid := (lo + hi) / 2
+		if len(wrapParas(paras, mid)) > want {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	fitted := wrapParas(paras, hi)
+	if len(fitted) == want {
+		return fitted
+	}
+	// `want` is unreachable: no width splits this text that way (a single
+	// unbreakable token can force it). Keep whichever side lands closer, and
+	// on a tie the narrower lines, which overflow less.
+	alt := wrapParas(paras, lo)
+	if absInt(len(alt)-want) < absInt(len(fitted)-want) {
+		return alt
+	}
+	return fitted
+}
+
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
