@@ -305,7 +305,7 @@ func labelFontSize(fo *xnode, docPx float64) float64 {
 		if !ok {
 			return
 		}
-		if f, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(v), "px"), 64); err == nil && f > 0 {
+		if f := cssLengthPx(v); f > 0 {
 			px = f
 		}
 	})
@@ -351,13 +351,38 @@ func docFontSize(root *xnode) float64 {
 			}
 		}
 	})
-	re := regexp.MustCompile(`#` + regexp.QuoteMeta(id) + `\s*\{[^}]*?font-size:\s*([0-9.]+)px`)
+	re := regexp.MustCompile(`#` + regexp.QuoteMeta(id) + `\s*\{[^}]*?font-size:\s*([0-9.]+(?:px|pt))`)
 	if m := re.FindStringSubmatch(css.String()); m != nil {
-		if f, err := strconv.ParseFloat(m[1], 64); err == nil && f > 0 {
+		if f := cssLengthPx(m[1]); f > 0 {
 			return f
 		}
 	}
 	return defFontSizePx
+}
+
+// cssLengthPx converts a CSS font-size to px. Only the absolute units are
+// converted: a relative one (em, rem, %) resolves against the cascade this
+// parser does not build, and a number read out of one as if it were px would
+// be worse than falling back to the diagram's own size.
+func cssLengthPx(v string) float64 {
+	v = strings.TrimSpace(v)
+	for _, u := range []struct {
+		suffix string
+		px     float64
+	}{
+		{"px", 1},
+		{"pt", 96.0 / 72.0},
+	} {
+		rest, ok := strings.CutSuffix(v, u.suffix)
+		if !ok {
+			continue
+		}
+		if f, err := strconv.ParseFloat(strings.TrimSpace(rest), 64); err == nil && f > 0 {
+			return f * u.px
+		}
+		return 0
+	}
+	return 0
 }
 
 // labelWrapWidth reports the pixel width the browser wrapped a label at, or 0

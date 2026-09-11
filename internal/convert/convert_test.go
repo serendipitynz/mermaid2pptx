@@ -939,6 +939,51 @@ func TestLabelLineCountNodeFontSize(t *testing.T) {
 	}
 }
 
+// TestFontSizeUnits covers the units a font size can arrive in. A size given
+// in pt read as if it were absent falls back to the diagram's, which is the
+// same miscount as having no per-label size at all: 15pt is 20px, so a 60px
+// label is two lines, not the three that 16px would make it.
+func TestFontSizeUnits(t *testing.T) {
+	cases := []struct {
+		in   string
+		want float64
+	}{
+		{"20px", 20},
+		{"15pt", 20},
+		{" 15pt ", 20},
+		{"1.5em", 0}, // relative: needs a cascade this parser does not build
+		{"120%", 0},
+		{"", 0},
+	}
+	for _, c := range cases {
+		if got := cssLengthPx(c.in); got != c.want {
+			t.Errorf("cssLengthPx(%q) = %g, want %g", c.in, got, c.want)
+		}
+	}
+
+	const doc = `<svg id="t"><style>#t{font-size:15pt;}</style>` +
+		`<g class="node"><foreignObject width="250" height="60">` +
+		`<div style="display: table; white-space: break-spaces; line-height: 1.5; width: 250px;">` +
+		`<span class="nodeLabel"><p>alpha beta gamma delta epsilon zeta</p></span>` +
+		`</div></foreignObject></g></svg>`
+	root, err := parseXMLTree(strings.NewReader(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := docFontSize(root); got != 20 {
+		t.Errorf("docFontSize = %g, want 20 (15pt)", got)
+	}
+	var g *xnode
+	root.walk(func(n *xnode) {
+		if g == nil && n.tag == "g" {
+			g = n
+		}
+	})
+	if _, _, lay := findLabel(g, docFontSize(root)); lay.lines != 2 {
+		t.Errorf("lines = %d, want 2 (60px at 15pt x 1.5)", lay.lines)
+	}
+}
+
 // TestFitLineCountMixedWidths checks where the breaks land, not just how many
 // there are. A line count can be matched with the breaks in the wrong place:
 // with one width for every latin glyph, two wide words estimate as fitting
