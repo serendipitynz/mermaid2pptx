@@ -910,6 +910,35 @@ func TestLabelLineCountFontSize(t *testing.T) {
 	}
 }
 
+// TestLabelLineCountNodeFontSize covers a single node sized apart from the rest
+// of the diagram — mermaid's classDef can do that — where the size reaches the
+// label as an inline style. Read against the document's 16px instead, this
+// label's 60px would come out as three lines rather than two.
+func TestLabelLineCountNodeFontSize(t *testing.T) {
+	const doc = `<svg id="t"><style>#t{font-size:16px;}</style>` +
+		`<g class="node"><foreignObject width="250" height="60">` +
+		`<div style="display: table; white-space: break-spaces; line-height: 1.5; width: 250px;">` +
+		`<span class="nodeLabel" style="font-size: 20px;"><p>alpha beta gamma delta epsilon zeta</p></span>` +
+		`</div></foreignObject></g></svg>`
+	root, err := parseXMLTree(strings.NewReader(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := docFontSize(root); got != 16 {
+		t.Fatalf("docFontSize = %g, want 16", got)
+	}
+	var g *xnode
+	root.walk(func(n *xnode) {
+		if g == nil && n.tag == "g" {
+			g = n
+		}
+	})
+	_, _, lay := findLabel(g, docFontSize(root))
+	if lay.lines != 2 {
+		t.Errorf("lines = %d, want 2 (60px at the label's own 20px x 1.5)", lay.lines)
+	}
+}
+
 // TestFitLineCountMixedWidths checks where the breaks land, not just how many
 // there are. A line count can be matched with the breaks in the wrong place:
 // with one width for every latin glyph, two wide words estimate as fitting

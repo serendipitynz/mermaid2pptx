@@ -280,11 +280,39 @@ func labelLineCount(fo *xnode, fontPx float64) int {
 	if h <= 0 {
 		return 0
 	}
-	lineH := fontPx * labelLineHeight(fo)
+	lineH := labelFontSize(fo, fontPx) * labelLineHeight(fo)
 	if lineH <= 0 {
 		return 0
 	}
 	return int(math.Round(h / lineH))
+}
+
+// labelFontSize is the size the label itself declares, falling back to the
+// diagram's. mermaid's classDef can set a font-size per node, which makes that
+// label's lines taller than the rest of the diagram's; where it reaches the
+// label as an inline style, this picks it up. The innermost declaration wins,
+// as it does for the label's color.
+//
+// A classDef mermaid emits as a stylesheet rule instead of an inline style is
+// not resolved: that needs the rule matched against the node's classes, and
+// there is no fixture rendered from such a diagram to check the shape against.
+// mermaid's DOM differs between versions, so a guess at it is what breaks
+// silently on the next upgrade.
+func labelFontSize(fo *xnode, docPx float64) float64 {
+	px := 0.0
+	fo.walk(func(n *xnode) {
+		v, ok := parseStyleDecls(n.get("style"))["font-size"]
+		if !ok {
+			return
+		}
+		if f, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(v), "px"), 64); err == nil && f > 0 {
+			px = f
+		}
+	})
+	if px <= 0 {
+		return docPx
+	}
+	return px
 }
 
 // labelLineHeight reads the unitless line-height mermaid sets on the label's
