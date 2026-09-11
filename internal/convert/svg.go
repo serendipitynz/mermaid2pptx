@@ -232,8 +232,9 @@ func extractLabel(fo *xnode) ([]Para, string) {
 }
 
 // findLabel finds the label group / foreignObject under an element and
-// returns paragraphs plus explicit text color.
-func findLabel(el *xnode) ([]Para, string) {
+// returns paragraphs, explicit text color, and the width the browser wrapped
+// the text at (0 when mermaid laid the label out unwrapped).
+func findLabel(el *xnode) ([]Para, string, float64) {
 	var fo *xnode
 	el.walk(func(n *xnode) {
 		if fo == nil && n.tag == "foreignObject" {
@@ -241,7 +242,7 @@ func findLabel(el *xnode) ([]Para, string) {
 		}
 	})
 	if fo == nil {
-		return nil, ""
+		return nil, "", 0
 	}
 	paras, color := extractLabel(fo)
 	if color == "" {
@@ -252,7 +253,44 @@ func findLabel(el *xnode) ([]Para, string) {
 			}
 		})
 	}
-	return paras, color
+	return paras, color, labelWrapWidth(fo)
+}
+
+// labelWrapWidth reports the pixel width the browser wrapped a label at, or 0
+// when mermaid declared it unwrappable (white-space: nowrap). The distinction
+// decides who owns the line breaks: a nowrap label carries every break in the
+// DOM as a <br>, so its paragraphs already are the rendered lines, while a
+// wrapped one records only its width and height and the break positions are
+// gone.
+func labelWrapWidth(fo *xnode) float64 {
+	nowrap := false
+	fo.walk(func(n *xnode) {
+		if parseStyleDecls(n.get("style"))["white-space"] == "nowrap" {
+			nowrap = true
+		}
+	})
+	if nowrap {
+		return 0
+	}
+	w, _ := strconv.ParseFloat(fo.get("width"), 64)
+	return w
+}
+
+// applyLabelWrap carries mermaid's line breaking across, so that the emitted
+// paragraphs are the lines mermaid rendered. A label mermaid did not wrap
+// already has every break in the DOM as a <br>; one the browser wrapped keeps
+// only its width, so it is re-broken here at that same width.
+//
+// The line breaks are then the generator's to own: every label is emitted with
+// PowerPoint's wrapping switched off. Leaving it on re-breaks these lines
+// against a text area much narrower than the node box, which is the whole
+// defect for a one-line label and re-breaks a wrapped one just as badly
+// (a 2-line diamond label came back out of PowerPoint as 4 lines).
+func applyLabelWrap(paras []Para, wrapW float64) []Para {
+	if wrapW <= 0 {
+		return paras
+	}
+	return wrapParas(paras, wrapW)
 }
 
 // diagramType maps the SVG root's aria-roledescription to a Diagram.Type.
@@ -376,7 +414,9 @@ func parseCluster(g *xnode, dx, dy float64) (Cluster, bool) {
 	st := parseStyleDecls(rect.get("style"))
 	c.Fill = styleColor(st, "fill")
 	c.Stroke = styleColor(st, "stroke")
-	c.Label, c.TextColor = findLabel(g)
+	var wrapW float64
+	c.Label, c.TextColor, wrapW = findLabel(g)
+	c.Label = applyLabelWrap(c.Label, wrapW)
 	return c, c.R.W > 0 && c.R.H > 0
 }
 
@@ -508,7 +548,9 @@ func parseNode(g *xnode, dtype string, dx, dy float64) (Node, bool) {
 	default:
 		return n, false
 	}
-	n.Label, n.TextColor = findLabel(g)
+	var wrapW float64
+	n.Label, n.TextColor, wrapW = findLabel(g)
+	n.Label = applyLabelWrap(n.Label, wrapW)
 	if dtype == "state" {
 		applyStateNodeStyle(g, &n)
 	}
@@ -625,7 +667,9 @@ func parseEdgeLabel(g *xnode, dx, dy float64) (EdgeLabel, bool) {
 	}
 	l.W, _ = strconv.ParseFloat(fo.get("width"), 64)
 	l.H, _ = strconv.ParseFloat(fo.get("height"), 64)
-	l.Label, l.TextColor = findLabel(g)
+	var wrapW float64
+	l.Label, l.TextColor, wrapW = findLabel(g)
+	l.Label = applyLabelWrap(l.Label, wrapW)
 	return l, l.W > 0 && l.H > 0 && len(l.Label) > 0
 }
 

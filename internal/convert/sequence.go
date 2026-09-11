@@ -174,18 +174,14 @@ func smallestEnclosing(nodes []Node, p Pt) *Node {
 }
 
 // estTextWidth estimates the pixel width of the widest paragraph at the
-// default 16px font (CJK chars are full-width).
+// default 16px font.
 func estTextWidth(paras []Para) float64 {
 	widest := 0.0
 	for _, p := range paras {
 		w := 0.0
 		for _, r := range p.Runs {
 			for _, c := range r.Text {
-				if c > 0xFF {
-					w += 16
-				} else {
-					w += 9
-				}
+				w += runeWidthPx(c)
 			}
 		}
 		if w > widest {

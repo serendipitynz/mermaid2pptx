@@ -7,6 +7,8 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -240,13 +242,18 @@ func TestParseGraph4(t *testing.T) {
 	if math.Abs(gate.R.Cx()-198) > 1 || math.Abs(gate.R.Cy()-373) > 1 {
 		t.Errorf("GATE center = (%g, %g), want (~198, ~373)", gate.R.Cx(), gate.R.Cy())
 	}
-	// wrapped long label stays one paragraph (no <br/>)
+	// the browser wrapped this label onto 3 lines (foreignObject 250x72) and
+	// the SVG keeps no break positions, so the generator re-breaks it itself
 	form := nodeByID(d, "FORM")
-	if form == nil || len(form.Label) != 1 {
+	if form == nil || len(form.Label) != 3 {
 		t.Fatalf("FORM label paras: %+v", form)
 	}
-	if n := len([]rune(form.Label[0].Runs[0].Text)); n < 30 {
-		t.Errorf("FORM label too short (%d runes), wrapping sample broken?", n)
+	runes := 0
+	for _, p := range form.Label {
+		runes += len([]rune(p.Runs[0].Text))
+	}
+	if runes < 30 {
+		t.Errorf("FORM label too short (%d runes), wrapping sample broken?", runes)
 	}
 	// the gate connects across both clusters
 	deg := 0
@@ -593,5 +600,188 @@ func TestLabelBoxFitsPresetTextRectangle(t *testing.T) {
 			t.Errorf("labelBoxSize(%g, %g) = %g x %g: text area %g x %g, want at least %g x %g",
 				c.w, c.h, w, h, w-inset, h-inset, wantW, wantH)
 		}
+	}
+}
+
+// emittedLabel is what the generated slide says about one label's shape.
+type emittedLabel struct {
+	paras  int
+	noWrap bool
+}
+
+// labelLines is what the source SVG says about one label: how many lines
+// mermaid rendered it on (foreignObject height, 24px per line).
+type labelLines struct {
+	lines int
+}
+
+// svgLabelLines reads that per node and cluster id, keyed by the shape name
+// the generator gives them.
+func svgLabelLines(t *testing.T, path string) map[string]labelLines {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Skipf("%s not available: %v", path, err)
+	}
+	defer f.Close()
+	root, err := parseXMLTree(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]labelLines{}
+	root.walk(func(n *xnode) {
+		if n.tag != "g" {
+			return
+		}
+		var name string
+		switch {
+		case n.hasClass("node"):
+			name = nodeID(n.get("id"))
+		case n.hasClass("cluster") || n.hasClass("statediagram-cluster"):
+			name = "cluster " + orDefault(n.get("data-id"), clusterID(n.get("id")))
+		default:
+			return
+		}
+		var fo *xnode
+		n.walk(func(k *xnode) {
+			if fo == nil && k.tag == "foreignObject" {
+				fo = k
+			}
+		})
+		if fo == nil {
+			return
+		}
+		h, _ := strconv.ParseFloat(fo.get("height"), 64)
+		if h <= 0 {
+			return
+		}
+		out[name] = labelLines{lines: int(math.Round(h / 24))}
+	})
+	return out
+}
+
+// TestNodeLabelLineCount checks that every node and cluster label is emitted
+// with as many paragraphs as mermaid rendered lines, and with PowerPoint's own
+// wrapping switched off — otherwise PowerPoint re-breaks those lines against a
+// text area narrower than the node box.
+func TestNodeLabelLineCount(t *testing.T) {
+	for _, f := range []string{"1", "2", "3", "4", "5", "7", "8"} {
+		path := "../../sample/graph" + f + ".svg"
+		d := mustParseFile(t, path)
+		want := svgLabelLines(t, path)
+
+		root, err := parseXMLTree(strings.NewReader(GenerateSlideXML(d, Options{Font: "X", MarginIn: 0.3})))
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		got := map[string]emittedLabel{}
+		root.walk(func(nd *xnode) {
+			if nd.tag != "sp" {
+				return
+			}
+			var name string
+			var bodyPr *xnode
+			paras := 0
+			nd.walk(func(k *xnode) {
+				switch k.tag {
+				case "cNvPr":
+					if name == "" {
+						name = k.get("name")
+					}
+				case "bodyPr":
+					if bodyPr == nil {
+						bodyPr = k
+					}
+				case "p":
+					paras++
+				}
+			})
+			got[name] = emittedLabel{paras: paras, noWrap: bodyPr != nil && bodyPr.get("wrap") == "none"}
+		})
+
+		named := map[string][]Para{}
+		for _, n := range d.Nodes {
+			if len(n.Label) > 0 {
+				named[n.ID] = n.Label
+			}
+		}
+		for _, c := range d.Clusters {
+			if len(c.Label) > 0 {
+				named["cluster "+c.ID] = c.Label
+			}
+		}
+		checked := 0
+		for name := range named {
+			w, ok := want[name]
+			if !ok {
+				t.Errorf("%s: %q has a label with no foreignObject in the SVG", path, name)
+				continue
+			}
+			g, ok := got[name]
+			if !ok {
+				t.Errorf("%s: %q emitted no shape", path, name)
+				continue
+			}
+			if g.paras != w.lines {
+				t.Errorf("%s: %q emitted %d paragraphs, mermaid rendered %d lines", path, name, g.paras, w.lines)
+			}
+			if !g.noWrap {
+				t.Errorf("%s: %q emitted with wrapping on; PowerPoint would re-break mermaid's lines", path, name)
+			}
+			checked++
+		}
+		if checked == 0 {
+			// class / ER nodes are decomposed into compartment text boxes,
+			// which carry no id to match on; compare line counts as a whole
+			checkCompartmentLines(t, path, d)
+		}
+	}
+}
+
+// checkCompartmentLines compares, for the diagram types whose node labels
+// become compartment text boxes, the lines mermaid rendered against the
+// paragraphs emitted. There is no id to match on, so the comparison is over
+// the sorted line counts of the labels as a whole.
+func checkCompartmentLines(t *testing.T, path string, d *Diagram) {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Skipf("%s not available: %v", path, err)
+	}
+	defer f.Close()
+	root, err := parseXMLTree(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []int
+	root.walk(func(n *xnode) {
+		if n.tag != "g" || !n.hasClass("node") {
+			return
+		}
+		n.walk(func(k *xnode) {
+			if k.tag != "foreignObject" {
+				return
+			}
+			h, _ := strconv.ParseFloat(k.get("height"), 64)
+			paras, _ := extractLabel(k)
+			if h > 0 && len(paras) > 0 {
+				want = append(want, int(math.Round(h/24)))
+			}
+		})
+	})
+	var have []int
+	for _, tb := range d.TextBoxes {
+		if len(tb.Label) > 0 {
+			have = append(have, len(tb.Label))
+		}
+	}
+	sort.Ints(want)
+	sort.Ints(have)
+	if len(want) == 0 {
+		t.Errorf("%s: no node labels to verify", path)
+		return
+	}
+	if !slices.Equal(want, have) {
+		t.Errorf("%s: label line counts %v, mermaid rendered %v", path, have, want)
 	}
 }
