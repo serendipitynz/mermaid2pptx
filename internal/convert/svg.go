@@ -231,6 +231,12 @@ func extractLabel(fo *xnode) ([]Para, string) {
 	return paras, color
 }
 
+// mermaid's own defaults, used when the SVG does not say otherwise.
+const (
+	defFontSizePx = 16.0
+	defLineHeight = 1.5
+)
+
 // labelLayout is what mermaid's foreignObject records about how the label was
 // laid out: the width the browser wrapped it at (0 when mermaid laid it out
 // unwrapped) and the number of lines it ended up on.
@@ -240,8 +246,9 @@ type labelLayout struct {
 }
 
 // findLabel finds the label group / foreignObject under an element and
-// returns paragraphs, explicit text color, and that layout.
-func findLabel(el *xnode) ([]Para, string, labelLayout) {
+// returns paragraphs, explicit text color, and that layout. fontPx is the
+// diagram's font size, which the line count is read against.
+func findLabel(el *xnode, fontPx float64) ([]Para, string, labelLayout) {
 	var fo *xnode
 	el.walk(func(n *xnode) {
 		if fo == nil && n.tag == "foreignObject" {
@@ -260,17 +267,69 @@ func findLabel(el *xnode) ([]Para, string, labelLayout) {
 			}
 		})
 	}
-	return paras, color, labelLayout{wrapW: labelWrapWidth(fo), lines: labelLineCount(fo)}
+	return paras, color, labelLayout{wrapW: labelWrapWidth(fo), lines: labelLineCount(fo, fontPx)}
 }
 
 // labelLineCount is how many lines mermaid rendered the label on: its
-// foreignObject is one 24px line high per line of text.
-func labelLineCount(fo *xnode) int {
+// foreignObject is one line high per line of text. The line is the diagram's
+// font size times the label's own line-height, not a fixed 24px — mermaid
+// takes a configured fontSize, and at 20px a two-line label is 60px high,
+// which read as 24px lines would come out as three.
+func labelLineCount(fo *xnode, fontPx float64) int {
 	h, _ := strconv.ParseFloat(fo.get("height"), 64)
 	if h <= 0 {
 		return 0
 	}
-	return int(math.Round(h / 24))
+	lineH := fontPx * labelLineHeight(fo)
+	if lineH <= 0 {
+		return 0
+	}
+	return int(math.Round(h / lineH))
+}
+
+// labelLineHeight reads the unitless line-height mermaid sets on the label's
+// div, defaulting to the 1.5 it has always emitted.
+func labelLineHeight(fo *xnode) float64 {
+	ratio := 0.0
+	fo.walk(func(n *xnode) {
+		if ratio > 0 {
+			return
+		}
+		if v, ok := parseStyleDecls(n.get("style"))["line-height"]; ok {
+			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && f > 0 {
+				ratio = f
+			}
+		}
+	})
+	if ratio <= 0 {
+		return defLineHeight
+	}
+	return ratio
+}
+
+// docFontSize is the font size mermaid's own stylesheet sets on the diagram
+// root, which every label is laid out against. Diagrams rendered with a
+// configured fontSize carry it here rather than in any label's own style.
+func docFontSize(root *xnode) float64 {
+	id := root.get("id")
+	if id == "" {
+		return defFontSizePx
+	}
+	var css strings.Builder
+	root.walk(func(n *xnode) {
+		if n.tag == "style" {
+			for _, k := range n.kids {
+				css.WriteString(k.text)
+			}
+		}
+	})
+	re := regexp.MustCompile(`#` + regexp.QuoteMeta(id) + `\s*\{[^}]*?font-size:\s*([0-9.]+)px`)
+	if m := re.FindStringSubmatch(css.String()); m != nil {
+		if f, err := strconv.ParseFloat(m[1], 64); err == nil && f > 0 {
+			return f
+		}
+	}
+	return defFontSizePx
 }
 
 // labelWrapWidth reports the pixel width the browser wrapped a label at, or 0
@@ -369,6 +428,7 @@ func ParseMermaidSVG(r io.Reader) (*Diagram, error) {
 // nest their content in a translated <g class="root">, so ancestor
 // translates are accumulated while walking.
 func parseGraphDiagram(root *xnode, d *Diagram) {
+	fontPx := docFontSize(root)
 	var visit func(n *xnode, dx, dy float64)
 	visit = func(n *xnode, dx, dy float64) {
 		if n.tag == "" || n.tag == "defs" {
@@ -376,14 +436,14 @@ func parseGraphDiagram(root *xnode, d *Diagram) {
 		}
 		switch {
 		case n.tag == "g" && (n.hasClass("cluster") || n.hasClass("statediagram-cluster")):
-			if c, ok := parseCluster(n, dx, dy); ok {
+			if c, ok := parseCluster(n, fontPx, dx, dy); ok {
 				d.Clusters = append(d.Clusters, c)
 			}
 			return
 		case n.tag == "g" && n.hasClass("node"):
 			if d.Type == "class" || d.Type == "er" {
 				parseCompartmentNode(n, d, dx, dy)
-			} else if nd, ok := parseNode(n, d.Type, dx, dy); ok {
+			} else if nd, ok := parseNode(n, d.Type, fontPx, dx, dy); ok {
 				d.Nodes = append(d.Nodes, nd)
 			}
 			return
@@ -393,7 +453,7 @@ func parseGraphDiagram(root *xnode, d *Diagram) {
 			}
 			return
 		case n.tag == "g" && n.hasClass("edgeLabel"):
-			if l, ok := parseEdgeLabel(n, dx, dy); ok {
+			if l, ok := parseEdgeLabel(n, fontPx, dx, dy); ok {
 				d.Labels = append(d.Labels, l)
 			}
 			return
@@ -409,7 +469,7 @@ func parseGraphDiagram(root *xnode, d *Diagram) {
 	resolveEdgeEndpoints(d)
 }
 
-func parseCluster(g *xnode, dx, dy float64) (Cluster, bool) {
+func parseCluster(g *xnode, fontPx, dx, dy float64) (Cluster, bool) {
 	c := Cluster{ID: orDefault(g.get("data-id"), clusterID(g.get("id")))}
 	if tx, ty, ok := parseTranslate(g.get("transform")); ok {
 		dx, dy = dx+tx, dy+ty
@@ -432,7 +492,7 @@ func parseCluster(g *xnode, dx, dy float64) (Cluster, bool) {
 	c.Fill = styleColor(st, "fill")
 	c.Stroke = styleColor(st, "stroke")
 	var lay labelLayout
-	c.Label, c.TextColor, lay = findLabel(g)
+	c.Label, c.TextColor, lay = findLabel(g, fontPx)
 	c.Label = applyLabelWrap(c.Label, lay)
 	return c, c.R.W > 0 && c.R.H > 0
 }
@@ -464,7 +524,7 @@ func clusterID(id string) string {
 	return id
 }
 
-func parseNode(g *xnode, dtype string, dx, dy float64) (Node, bool) {
+func parseNode(g *xnode, dtype string, fontPx, dx, dy float64) (Node, bool) {
 	n := Node{ID: nodeID(g.get("id"))}
 	tx, ty, ok := parseTranslate(g.get("transform"))
 	if !ok {
@@ -566,7 +626,7 @@ func parseNode(g *xnode, dtype string, dx, dy float64) (Node, bool) {
 		return n, false
 	}
 	var lay labelLayout
-	n.Label, n.TextColor, lay = findLabel(g)
+	n.Label, n.TextColor, lay = findLabel(g, fontPx)
 	n.Label = applyLabelWrap(n.Label, lay)
 	if dtype == "state" {
 		applyStateNodeStyle(g, &n)
@@ -666,7 +726,7 @@ func parseEdge(p *xnode, dx, dy float64) (Edge, bool) {
 	return e, len(e.Points) >= 2
 }
 
-func parseEdgeLabel(g *xnode, dx, dy float64) (EdgeLabel, bool) {
+func parseEdgeLabel(g *xnode, fontPx, dx, dy float64) (EdgeLabel, bool) {
 	l := EdgeLabel{}
 	cx, cy, ok := parseTranslate(g.get("transform"))
 	if !ok {
@@ -685,7 +745,7 @@ func parseEdgeLabel(g *xnode, dx, dy float64) (EdgeLabel, bool) {
 	l.W, _ = strconv.ParseFloat(fo.get("width"), 64)
 	l.H, _ = strconv.ParseFloat(fo.get("height"), 64)
 	var lay labelLayout
-	l.Label, l.TextColor, lay = findLabel(g)
+	l.Label, l.TextColor, lay = findLabel(g, fontPx)
 	l.Label = applyLabelWrap(l.Label, lay)
 	return l, l.W > 0 && l.H > 0 && len(l.Label) > 0
 }

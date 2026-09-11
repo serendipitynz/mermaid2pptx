@@ -859,6 +859,38 @@ func TestSequenceLabelsUnwrapped(t *testing.T) {
 	}
 }
 
+// TestLabelLineCountFontSize covers a diagram rendered at a configured
+// fontSize. mermaid puts that size on the svg root, and the label's height is
+// a multiple of it — so reading the height as a fixed 24px per line turns a
+// two-line label at 20px (60px high) into three.
+func TestLabelLineCountFontSize(t *testing.T) {
+	const doc = `<svg id="t"><style>#t{font-family:"trebuchet ms";font-size:20px;fill:#333;}</style>` +
+		`<g class="node"><foreignObject width="250" height="60">` +
+		`<div style="display: table; white-space: break-spaces; line-height: 1.5; width: 250px;">` +
+		`<span class="nodeLabel"><p>alpha beta gamma delta epsilon zeta eta theta</p></span>` +
+		`</div></foreignObject></g></svg>`
+	root, err := parseXMLTree(strings.NewReader(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := docFontSize(root); got != 20 {
+		t.Errorf("docFontSize = %g, want 20", got)
+	}
+	var g *xnode
+	root.walk(func(n *xnode) {
+		if g == nil && n.tag == "g" {
+			g = n
+		}
+	})
+	paras, _, lay := findLabel(g, docFontSize(root))
+	if lay.lines != 2 {
+		t.Errorf("lines = %d, want 2 (60px at 20px x 1.5)", lay.lines)
+	}
+	if got := applyLabelWrap(paras, lay); len(got) != 2 {
+		t.Errorf("emitted %d paragraphs, want 2", len(got))
+	}
+}
+
 // TestFitLineCountMixedWidths checks where the breaks land, not just how many
 // there are. A line count can be matched with the breaks in the wrong place:
 // with one width for every latin glyph, two wide words estimate as fitting
