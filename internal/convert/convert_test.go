@@ -858,3 +858,30 @@ func TestSequenceLabelsUnwrapped(t *testing.T) {
 		t.Errorf("%s: no labels to verify", path)
 	}
 }
+
+// TestFitLineCountMixedWidths checks where the breaks land, not just how many
+// there are. A line count can be matched with the breaks in the wrong place:
+// with one width for every latin glyph, two wide words estimate as fitting
+// together on a 250px line where the browser gave them a line each, and that
+// line — emitted with wrapping disabled — hangs out of the shape.
+func TestFitLineCountMixedWidths(t *testing.T) {
+	paras := []Para{{Runs: []Run{{Text: "WWWWWWWWWWWW WWWWWWWWWWWW iiiiiiiiii"}}}}
+	got := applyLabelWrap(paras, labelLayout{wrapW: 250, lines: 2})
+	if len(got) != 2 {
+		t.Fatalf("emitted %d paragraphs, want 2", len(got))
+	}
+	for i, p := range got {
+		w := 0.0
+		for _, r := range p.Runs {
+			for _, c := range r.Text {
+				w += runeWidthPx(c)
+			}
+		}
+		if w > 250 {
+			t.Errorf("line %d is %.0fpx wide, past the %gpx mermaid wrapped at: %q", i+1, w, 250.0, p.Runs[0].Text)
+		}
+	}
+	if strings.Count(got[0].Runs[0].Text, "W") != 12 {
+		t.Errorf("line 1 = %q, want the one wide word the browser put there", got[0].Runs[0].Text)
+	}
+}
