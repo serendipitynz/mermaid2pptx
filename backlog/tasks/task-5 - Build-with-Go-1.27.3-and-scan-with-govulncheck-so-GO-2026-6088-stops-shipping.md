@@ -1,10 +1,10 @@
 ---
 id: TASK-5
 title: Build with Go 1.27.3 and scan with govulncheck so GO-2026-6088 stops shipping
-status: In Review
+status: Done
 assignee: []
 created_date: '2026-10-25 11:24'
-updated_date: '2026-10-25 11:28'
+updated_date: '2026-10-25 11:32'
 labels: []
 milestone: m-4
 dependencies: []
@@ -31,7 +31,7 @@ Nothing checked for this automatically; vulnerabilities in Go were only found by
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 go.mod has toolchain go1.27.3, and ci.yml / release.yml build with it through setup-go
+- [x] #1 go.mod has toolchain go1.27.3, and ci.yml / release.yml build with it through setup-go
 - [x] #2 A govulncheck workflow runs on PRs, on push to main, weekly and on demand, for every target release.yml ships, and fails only on Symbol Results
 - [x] #3 govulncheck reports no Symbol Results for those targets with go1.27.3
 - [x] #4 gofmt -l, go vet ./... and go test ./... pass
@@ -44,4 +44,6 @@ Nothing checked for this automatically; vulnerabilities in Go were only found by
 - `.github/workflows/govulncheck.yml` follows serenebach's (PR #163): its own workflow so the weekly cron re-runs only the scan, fails only on Symbol Results, govulncheck pinned to v1.9.0 and installed before GOOS/GOARCH are set. The matrix is the five targets release.yml ships (darwin amd64/arm64, linux amd64/arm64, windows amd64) instead of serenebach's eight. `cache: false` matches ci.yml, since there is no go.sum.
 - Local checks (macOS arm64, Go auto-switched to go1.27.3 from go.mod): `gofmt -l .` prints nothing, `go vet ./...` and `go test ./...` pass, the windows/amd64 cross-build passes. govulncheck v1.9.0 with CGO_ENABLED=0 reports No vulnerabilities found for each of the five targets, against the go1.27.3 standard library. With GOTOOLCHAIN=go1.24.13 the same scan reports GO-2026-6088 reachable through `internal/convert/svg.go:53`.
 - The fixed binaries reach users only with a new release; v0.3.0 is affected. Whether that is a v0.3.1 patch or waits for v0.4.0 (m-4) is the owner's call.
+
+- #1 confirmed on PR #5: the setup-go step of both ci.yml (build-test) and govulncheck.yml logged `Setup go version spec 1.27.3` / `go version go1.27.3`, and all five govulncheck jobs passed. Codex review approved round 1 with no findings. Shipped as the v0.3.1 patch release rather than waiting for v0.4.0 (owner's decision, 2026-10-26); the milestone stays m-4 because no v0.3.x milestone is open.
 <!-- SECTION:NOTES:END -->
